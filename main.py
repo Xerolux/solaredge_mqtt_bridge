@@ -51,26 +51,27 @@ def fetch_data(modbus_client):
     """Fetch data from Modbus and return a dictionary of values."""
     data = {}
     try:
-        # Example: Replace with actual register addresses for each data point
-        data[1] = modbus_client.read_input_registers(100, 2, unit=MODBUS_UNIT_ID).registers  # Example for energy consumption
-        data[2] = modbus_client.read_input_registers(200, 2, unit=MODBUS_UNIT_ID).registers  # Example for current power
+        data[1] = modbus_client.read_input_registers(
+            100, 2, unit=MODBUS_UNIT_ID).registers  # Example for energy consumption
+        data[2] = modbus_client.read_input_registers(
+            200, 2, unit=MODBUS_UNIT_ID).registers  # Example for current power
         # Add other register addresses here...
-    except Exception as e:
+    except (ConnectionError, ValueError) as e:
         logger.error("Error fetching data: %s", e)
     return data
 
-def publish_data(mqtt_client, data):
+def publish_data(mqtt_client_instance, data):
     """Publish fetched data to the MQTT broker."""
     for key, values in data.items():
         payload = f"{key}\n"
         for i, value in enumerate(values, 1):
             payload += f"{i}. Value: {value}\n"
-        mqtt_client.publish(f"{MQTT_TOPIC}/{key}", payload)
+        mqtt_client_instance.publish(f"{MQTT_TOPIC}/{key}", payload)
 
 def main():
     """Main program to fetch and publish data periodically."""
-    mqtt_client = connect_mqtt()
-    mqtt_client.loop_start()
+    mqtt_client_instance = connect_mqtt()
+    mqtt_client_instance.loop_start()
     modbus_client = ModbusTcpClient(MODBUS_HOST, port=MODBUS_PORT)
 
     try:
@@ -87,12 +88,12 @@ def main():
             
             # Fetch data and publish via MQTT
             data = fetch_data(modbus_client)
-            publish_data(mqtt_client, data)
+            publish_data(mqtt_client_instance, data)
             time.sleep(INTERVAL)
     except KeyboardInterrupt:
         logger.info("Stopped by user")
     finally:
-        mqtt_client.loop_stop()
+        mqtt_client_instance.loop_stop()
         modbus_client.close()
 
 if __name__ == "__main__":
