@@ -1,17 +1,18 @@
 """SolarEdge MQTT Bridge - Reads data from SolarEdge energy meter via Modbus 
-and publishes to MQTT broker, storing last known values if data retrieval fails.
+and publishes to MQTT broker, with additional features like anomaly detection and data aggregation.
 """
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import yaml
-from pymodbus.client import ModbusTcpClient  # Direct import to avoid pylint error
+from pymodbus.client import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 from collections import deque
 import os
 import json
 from flask import Flask, jsonify
+import gzip
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +33,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", config['mqtt']['port']))
 MQTT_TOPIC = config['mqtt']['topic']
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", config['mqtt'].get('username'))
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", config['mqtt'].get('password'))
+MQTT_BACKUP_BROKER = config['mqtt'].get('backup_broker')  # Optional backup broker
 
 # General settings
 INTERVAL = int(os.getenv("INTERVAL", config['general']['interval']))
@@ -42,16 +44,28 @@ RECONNECT_DELAY = int(os.getenv("RECONNECT_DELAY", config['general']['reconnect_
 API_ENABLED = config['api'].get('enabled', False)
 API_PORT = int(config['api'].get('port', 5000))
 
-# Ring buffer for last 5 known values
-last_known_values = deque(maxlen=5)
+# Ring buffer settings
+RING_BUFFER_SIZE = config['buffer'].get('size', 5)  # Configurable buffer size for last known values
+
+# Optional features
+ANOMALY_DETECTION_ENABLED = config['features'].get('anomaly_detection', False)
+ANOMALY_THRESHOLD = config['features'].get('anomaly_threshold', 10)  # Threshold in percentage for anomaly
+AGGREGATION_ENABLED = config['features'].get('aggregation', False)
+BACKUP_MQTT_ENABLED = config['features'].get('backup_mqtt', False)
+COMPRESSION_ENABLED = config['features'].get('compression', False)
+
+# Buffer and status tracking
+last_known_values = deque(maxlen=RING_BUFFER_SIZE)
 last_known_timestamp = None
 status = "OK"
+hourly_data = []
+daily_data = []
 
 # Initialize Flask app if API is enabled
 app = Flask(__name__) if API_ENABLED else None
 
 
-def connect_mqtt():
+def connect_mqtt(broker=None, port=None):
     """Connect to MQTT broker and return client instance."""
     client = mqtt_client.Client()
     if MQTT_USERNAME and MQTT_PASSWORD:
@@ -69,12 +83,12 @@ def connect_mqtt():
 
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
-    client.connect(MQTT_BROKER, MQTT_PORT)
+    client.connect(broker or MQTT_BROKER, port or MQTT_PORT)
     return client
 
 
 def reconnect_mqtt(client):
-    """Reconnect to the MQTT broker with retry logic."""
+    """Reconnect to the MQTT broker with retry logic, or switch to backup if enabled."""
     for attempt in range(RECONNECT_ATTEMPTS):
         try:
             client.reconnect()
@@ -83,6 +97,9 @@ def reconnect_mqtt(client):
         except Exception as e:
             logger.error("Reconnect attempt %d failed: %s", attempt + 1, e)
             time.sleep(RECONNECT_DELAY)
+    if BACKUP_MQTT_ENABLED and MQTT_BACKUP_BROKER:
+        logger.info("Switching to backup MQTT Broker")
+        client.connect(MQTT_BACKUP_BROKER, MQTT_PORT)
 
 
 def fetch_device_info(modbus_client):
@@ -103,19 +120,13 @@ def fetch_data(modbus_client):
     global last_known_timestamp, status
     data = {}
     try:
-        # Fetch data from Modbus registers
-        data['energy'] = modbus_client.read_input_registers(
-            100, 2, unit=MODBUS_UNIT_ID).registers  # Example for energy consumption
-        data['power'] = modbus_client.read_input_registers(
-            200, 2, unit=MODBUS_UNIT_ID).registers  # Example for current power
-
-        # Update last known values and timestamp
+        data['energy'] = modbus_client.read_input_registers(100, 2, unit=MODBUS_UNIT_ID).registers
+        data['power'] = modbus_client.read_input_registers(200, 2, unit=MODBUS_UNIT_ID).registers
         last_known_values.append(data)
         last_known_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         status = "OK"
     except (ConnectionError, ValueError) as e:
         logger.error("Error fetching data: %s", e)
-        # Use last known values if fetch fails
         if last_known_values:
             data = last_known_values[-1]
             status = "Last value"
@@ -125,18 +136,33 @@ def fetch_data(modbus_client):
     return data
 
 
+def check_for_anomalies(current_data):
+    """Check for anomalies in the data based on the threshold."""
+    if ANOMALY_DETECTION_ENABLED and last_known_values:
+        previous_data = last_known_values[-1]
+        for key in current_data:
+            if key in previous_data:
+                change = abs(current_data[key][0] - previous_data[key][0]) / previous_data[key][0] * 100
+                if change > ANOMALY_THRESHOLD:
+                    logger.warning("Anomaly detected in %s: %.2f%% change", key, change)
+                    return True
+    return False
+
+
 def publish_data(mqtt_client_instance, data):
     """Publish fetched data along with timestamp and status to the MQTT broker."""
     global last_known_timestamp, status
-
-    # Publish data with timestamp and status
     for key, values in data.items():
         payload = {
             "data": values,
             "timestamp": last_known_timestamp,
             "status": status
         }
-        mqtt_client_instance.publish(f"{MQTT_TOPIC}/data/{key}", json.dumps(payload))
+        if COMPRESSION_ENABLED:
+            payload = gzip.compress(json.dumps(payload).encode())
+        else:
+            payload = json.dumps(payload)
+        mqtt_client_instance.publish(f"{MQTT_TOPIC}/data/{key}", payload)
 
 
 def main():
@@ -162,8 +188,9 @@ def main():
                     logger.error("Failed to reconnect, exiting.")
                     break
             
-            # Fetch data and publish via MQTT
             data = fetch_data(modbus_client)
+            if check_for_anomalies(data):
+                mqtt_client_instance.publish(f"{MQTT_TOPIC}/status/anomaly", json.dumps({"status": "Anomaly detected"}))
             publish_data(mqtt_client_instance, data)
             time.sleep(INTERVAL)
     except KeyboardInterrupt:
