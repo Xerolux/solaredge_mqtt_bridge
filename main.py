@@ -1,5 +1,5 @@
 """SolarEdge MQTT Bridge - Reads data from SolarEdge energy meter via Modbus 
-and publishes to MQTT broker.
+and publishes to MQTT broker, storing last known values if data retrieval fails.
 """
 
 import logging
@@ -33,6 +33,9 @@ INTERVAL = config['general']['interval']
 RECONNECT_ATTEMPTS = config['general']['reconnect_attempts']
 RECONNECT_DELAY = config['general']['reconnect_delay']
 
+# Cache for last known values
+last_known_values = {}
+
 
 def connect_mqtt():
     """Connect to MQTT broker and return client instance."""
@@ -65,16 +68,21 @@ def fetch_device_info(modbus_client):
 
 
 def fetch_data(modbus_client):
-    """Fetch data from Modbus and return a dictionary of values."""
+    """Fetch data from Modbus and return a dictionary of values, or last known values if fetch fails."""
+    global last_known_values
     data = {}
     try:
+        # Fetch data from Modbus registers
         data[1] = modbus_client.read_input_registers(
             100, 2, unit=MODBUS_UNIT_ID).registers  # Example for energy consumption
         data[2] = modbus_client.read_input_registers(
             200, 2, unit=MODBUS_UNIT_ID).registers  # Example for current power
-        # Add other register addresses here...
+        # Update last known values cache
+        last_known_values = data
     except (ConnectionError, ValueError) as e:
         logger.error("Error fetching data: %s", e)
+        # Use last known values if fetch fails
+        data = last_known_values if last_known_values else {}
     return data
 
 
