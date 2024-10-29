@@ -19,10 +19,14 @@ general:
   reconnect_attempts: 5          # Anzahl der Wiederholungsversuche bei Verbindungsproblemen
   reconnect_delay: 10            # Verzögerung in Sekunden zwischen Wiederholungsversuchen
 
-# Database settings
-database:
-  path: "sensor_data.db"         # Pfad zur SQLite-Datenbank
-  buffer_size: 1000              # Maximale Anzahl der Einträge im Ringpuffer
+# InfluxDB settings
+influxdb:
+  url: "http://localhost:8086"           # URL des InfluxDB-Servers
+  token: "your-influxdb-token"           # Authentifizierungstoken für InfluxDB
+  org: "your-org-name"                   # InfluxDB-Organisation
+  bucket: "solar_edge_data"              # InfluxDB-Bucket, in dem die Daten gespeichert werden
+
+# Andere Konfigurationsabschnitte (z.B. MQTT, Modbus) bleiben unverändert
 
 # Prediction settings
 prediction:
