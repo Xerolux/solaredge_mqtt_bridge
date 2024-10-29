@@ -1,0 +1,26 @@
+
+[MASTER]
+ignore=venv
+persistent=yes
+load-plugins=pylint.extensions.mccabe,pylint.extensions.docparams
+
+[MESSAGES CONTROL]
+disable=
+    C0103,  # Variable name doesn't conform to snake_case naming style
+    C0114,  # Missing module docstring
+    C0116,  # Missing function or method docstring
+    W0511,  # TODO found
+    R0903,  # Too few public methods
+
+[FORMAT]
+max-line-length=127
+
+[DESIGN]
+max-args=5
+max-branches=12
+max-locals=15
+max-returns=6
+max-statements=50
+
+[SIMILARITIES]
+min-similarity-lines=4
