@@ -6,11 +6,12 @@ modbus:
 
 # MQTT configuration
 mqtt:
-  broker: "192.168.1.101"        # IP-Adresse des MQTT Brokers
+  broker: "192.168.1.101"        # IP-Adresse des primären MQTT Brokers
   port: 1883                     # Standard-Port für MQTT
   topic: "solaredge"             # Basis-Topic für MQTT-Nachrichten
   username: "mqtt_user"          # Optionaler MQTT-Benutzername
   password: "mqtt_password"      # Optionales MQTT-Passwort
+  backup_broker: "192.168.1.102" # Optionaler Backup-MQTT-Broker bei Verbindungsfehlern
 
 # General settings
 general:
@@ -18,7 +19,19 @@ general:
   reconnect_attempts: 5          # Anzahl der Wiederholungsversuche bei Verbindungsproblemen
   reconnect_delay: 10            # Verzögerung in Sekunden zwischen Wiederholungsversuchen
 
+# Ring buffer settings
+buffer:
+  size: 5                        # Anzahl der letzten bekannten Werte, die im Puffer gespeichert werden sollen
+
 # Optional API settings
 api:
   enabled: true                  # Aktiviert die API zur Laufzeit-Datenanzeige
   port: 5000                     # Port für die API (nur wenn enabled: true)
+
+# Optional features
+features:
+  anomaly_detection: true        # Aktiviert die Anomalie-Erkennung
+  anomaly_threshold: 10          # Schwellenwert für Anomalie-Erkennung (Prozentänderung)
+  aggregation: true              # Aktiviert die Aggregation von Stunden- und Tagesdaten
+  backup_mqtt: true              # Aktiviert die Verwendung des Backup-Brokers bei Verbindungsfehlern
+  compression: true              # Aktiviert die Komprimierung der MQTT-Nachrichten
