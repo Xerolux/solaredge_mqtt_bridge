@@ -1,41 +1,47 @@
 # InfluxDB settings
 influxdb:
-  url: "http://localhost:8086"             # URL des InfluxDB-Servers
-  token: "your-influxdb-token"             # Authentifizierungstoken für InfluxDB
-  org: "your-org-name"                     # InfluxDB-Organisation
-  bucket: "solar_edge_data"                # InfluxDB-Bucket, in dem die Daten gespeichert werden
-  visualization_query_range: "7d"          # Zeitraum für historische Daten in der Visualisierung (z.B., "7d" für 7 Tage)
-  training_query_range: "all"              # Zeitraum für das Modelltraining: "all" für alle Daten oder z.B. "30d" für die letzten 30 Tage
+  url: "http://localhost:8086"
+  token: "your-influxdb-token"
+  org: "your-org-name"
+  bucket: "solar_edge_data"
+  visualization_query_range: "7d"
+  training_query_range: "all"
 
 # MQTT configuration
 mqtt:
-  broker: "192.168.1.101"                  # IP-Adresse des primären MQTT Brokers
-  port: 1883                               # Standard-Port für MQTT
-  topic: "solaredge"                       # Basis-Topic für MQTT-Nachrichten
-  username: "mqtt_user"                    # Optionaler MQTT-Benutzername
-  password: "mqtt_password"                # Optionales MQTT-Passwort
-  backup_broker: "192.168.1.102"           # Optionaler Backup-MQTT-Broker bei Verbindungsfehlern
+  broker: "192.168.1.101"
+  port: 1883
+  topic: "solaredge"
+  username: "mqtt_user"
+  password: "mqtt_password"
+  backup_broker: "192.168.1.102"
 
 # General settings
 general:
-  interval: 60                             # Intervall in Sekunden für Datenabrufe
-  reconnect_attempts: 5                    # Anzahl der Wiederholungsversuche bei Verbindungsproblemen
-  reconnect_delay: 10                      # Verzögerung in Sekunden zwischen Wiederholungsversuchen
+  interval: 60
+  reconnect_attempts: 5
+  reconnect_delay: 10
 
 # Prediction settings
 prediction:
-  enabled: true                            # Aktiviert die Vorhersage
-  forecast_interval: 60                    # Vorhersageintervall in Sekunden (Abstand zwischen Vorhersageberechnungen)
+  enabled: true
+  forecast_interval: 60
+  include_weather: true           # Aktiviert die Wetterintegration
+  weather:
+    api_key: "your-weather-api-key"
+    location: "Zorneding,85604"   # Standort für die Wettervorhersage
+    provider: "openweather"       # Wetteranbieter (z.B., "openweather")
+    update_interval: 3600         # Aktualisierungsintervall für Wetterdaten (in Sekunden)
 
 # API settings for web interface
 api:
-  enabled: true                            # Aktiviert die Web-API für das Dashboard
-  port: 5000                               # Port für die API (kann über Konfiguration geändert werden)
+  enabled: true
+  port: 5000
 
 # Optional features
 features:
-  anomaly_detection: true                  # Aktiviert die Anomalie-Erkennung
-  anomaly_threshold: 10                    # Schwellenwert für Anomalie-Erkennung (Prozentänderung)
-  aggregation: true                        # Aktiviert die Aggregation von Stunden- und Tagesdaten
-  backup_mqtt: true                        # Aktiviert die Verwendung des Backup-Brokers bei Verbindungsfehlern
-  compression: true                        # Aktiviert die Komprimierung der MQTT-Nachrichten
+  anomaly_detection: true
+  anomaly_threshold: 10
+  aggregation: true
+  backup_mqtt: true
+  compression: true
