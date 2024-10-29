@@ -1,3 +1,8 @@
 pymodbus==2.5.3
 paho-mqtt==1.6.1
 pyyaml==6.0
+influxdb-client==1.36.1
+scikit-learn==1.2.2
+requests==2.31.0
+matplotlib==3.7.1
+flask==2.3.2
