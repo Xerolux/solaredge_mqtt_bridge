@@ -3,7 +3,7 @@
 import logging
 import time
 import yaml
-from pymodbus.client.sync import ModbusTcpClient
+from pymodbus.client import ModbusTcpClient  # Direct import to avoid pylint error
 from paho.mqtt import client as mqtt_client
 
 # Configure logging
