@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+</head>
+<body>
+    <h1>SolarEdge Dashboard</h1>
+    <h2>Aktuelle Daten</h2>
+    <p>Zeitstempel: {{ current_data[0] }}</p>
+    <p>Energie: {{ current_data[1] }}</p>
+    <p>Leistung: {{ current_data[2] }}</p>
+
+    <h2>Vorhergesagte Daten</h2>
+    <p>Vorhersage: {{ forecast }}</p>
+
+    <h2>Historische Daten</h2>
+    <img src="data:image/png;base64,{{ chart_data }}" alt="Historische Daten Diagramm">
+</body>
+</html>
