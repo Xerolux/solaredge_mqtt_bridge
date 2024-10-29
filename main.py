@@ -51,6 +51,19 @@ def connect_mqtt():
     return client
 
 
+def fetch_device_info(modbus_client):
+    """Fetch device information such as serial number, manufacturer, and model."""
+    info = {}
+    try:
+        # Example register addresses; replace these with actual addresses from SolarEdge documentation
+        info['serial_number'] = modbus_client.read_input_registers(40000, 2, unit=MODBUS_UNIT_ID).registers
+        info['model'] = modbus_client.read_input_registers(40010, 2, unit=MODBUS_UNIT_ID).registers
+        info['manufacturer'] = modbus_client.read_input_registers(40020, 2, unit=MODBUS_UNIT_ID).registers
+    except Exception as e:
+        logger.error("Error fetching device information: %s", e)
+    return info
+
+
 def fetch_data(modbus_client):
     """Fetch data from Modbus and return a dictionary of values."""
     data = {}
@@ -79,6 +92,11 @@ def main():
     mqtt_client_instance = connect_mqtt()
     mqtt_client_instance.loop_start()
     modbus_client = ModbusTcpClient(MODBUS_HOST, port=MODBUS_PORT)
+
+    # Fetch device information once at startup
+    device_info = fetch_device_info(modbus_client)
+    logger.info("Device Info: %s", device_info)
+    mqtt_client_instance.publish(f"{MQTT_TOPIC}/device_info", str(device_info))
 
     try:
         while True:
