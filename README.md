@@ -10,7 +10,7 @@ A Python script that reads data from a SolarEdge energy meter via Modbus and pub
 - Automatic reconnection for Modbus and MQTT if the connection is lost
 
 ## Prerequisites
-- **Python 3.7+**
+- **Python 3.7+ (including compatibility with Python 3.12)**
 - SolarEdge energy meter with Modbus TCP enabled
 - MQTT broker for publishing data
 
@@ -20,37 +20,70 @@ Install the necessary libraries via pip:
 pip install pymodbus paho-mqtt pyyaml
 ```
 
-## Installation
-1. **Clone the repository**:
+## Installation and Setup
+
+### Python 3.12 Compatibility
+This script is compatible with Python 3.12. To ensure compatibility:
+1. Install Python 3.12 and create a virtual environment:
    ```bash
-   git clone https://github.com/yourusername/solaredge-mqtt-bridge.git
-   cd solaredge-mqtt-bridge
+   python3.12 -m venv venv
+   source venv/bin/activate
    ```
-2. **Install dependencies**:
+
+2. Install the dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure settings**:
-   - Edit the `config.yaml` file with the correct settings for your Modbus and MQTT connections:
-     ```yaml
-     modbus:
-       host: "192.168.x.x"         # SolarEdge energy meter IP
-       port: 502                    # Modbus port (default: 502)
-       unit_id: 1                   # Modbus unit ID (default: 1)
+3. Run the script to confirm there are no compatibility issues:
+   ```bash
+   python main.py
+   ```
 
-     mqtt:
-       broker: "mqtt_broker_ip"     # MQTT broker IP
-       port: 1883                   # MQTT port (default: 1883)
-       topic: "WPZaehler"           # Root topic for MQTT data
-       username: "mqtt_user"        # MQTT username (optional)
-       password: "mqtt_password"    # MQTT password (optional)
+### Running as a Systemd Service
+To run the script as a Systemd service, follow these steps:
 
-     general:
-       interval: 10                 # Data fetch interval in seconds
-       reconnect_attempts: 3        # Number of reconnect attempts
-       reconnect_delay: 5           # Delay between reconnect attempts in seconds
-     ```
+1. Create a Systemd service file:
+   ```bash
+   sudo nano /etc/systemd/system/solaredge_mqtt.service
+   ```
+
+2. Add the following configuration, replacing `/path/to/venv` and `/path/to/project` with your actual paths:
+
+   ```ini
+   [Unit]
+   Description=SolarEdge MQTT Bridge Service
+   After=network.target
+
+   [Service]
+   ExecStart=/path/to/venv/bin/python /path/to/main.py
+   WorkingDirectory=/path/to/project
+   Restart=always
+   User=your-username
+   Environment="PYTHONUNBUFFERED=1"
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. Enable and start the service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable solaredge_mqtt.service
+   sudo systemctl start solaredge_mqtt.service
+   ```
+
+4. Check the status of the service:
+   ```bash
+   sudo systemctl status solaredge_mqtt.service
+   ```
+
+5. To stop, restart, or view logs for the service:
+   ```bash
+   sudo systemctl stop solaredge_mqtt.service
+   sudo systemctl restart solaredge_mqtt.service
+   journalctl -u solaredge_mqtt.service
+   ```
 
 ## Usage
 Run the script to start reading data and publishing to MQTT:
