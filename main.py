@@ -4,6 +4,7 @@ and publishes to MQTT broker, storing last known values if data retrieval fails.
 
 import logging
 import time
+from datetime import datetime
 import yaml
 from pymodbus.client import ModbusTcpClient  # Direct import to avoid pylint error
 from paho.mqtt import client as mqtt_client
@@ -33,8 +34,10 @@ INTERVAL = config['general']['interval']
 RECONNECT_ATTEMPTS = config['general']['reconnect_attempts']
 RECONNECT_DELAY = config['general']['reconnect_delay']
 
-# Cache for last known values
+# Cache for last known values and status
 last_known_values = {}
+last_known_timestamp = None
+status = "OK"
 
 
 def connect_mqtt():
@@ -69,7 +72,7 @@ def fetch_device_info(modbus_client):
 
 def fetch_data(modbus_client):
     """Fetch data from Modbus and return a dictionary of values, or last known values if fetch fails."""
-    global last_known_values
+    global last_known_values, last_known_timestamp, status
     data = {}
     try:
         # Fetch data from Modbus registers
@@ -77,21 +80,33 @@ def fetch_data(modbus_client):
             100, 2, unit=MODBUS_UNIT_ID).registers  # Example for energy consumption
         data[2] = modbus_client.read_input_registers(
             200, 2, unit=MODBUS_UNIT_ID).registers  # Example for current power
-        # Update last known values cache
+
+        # Update last known values and timestamp
         last_known_values = data
+        last_known_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status = "OK"
     except (ConnectionError, ValueError) as e:
         logger.error("Error fetching data: %s", e)
         # Use last known values if fetch fails
         data = last_known_values if last_known_values else {}
+        if data:
+            status = "Last value"
+        else:
+            status = "Error"
+            last_known_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return data
 
 
 def publish_data(mqtt_client_instance, data):
-    """Publish fetched data to the MQTT broker."""
+    """Publish fetched data along with timestamp and status to the MQTT broker."""
+    global last_known_timestamp, status
+
+    # Publish data with timestamp and status
     for key, values in data.items():
         payload = f"{key}\n"
         for i, value in enumerate(values, 1):
             payload += f"{i}. Value: {value}\n"
+        payload += f"Timestamp: {last_known_timestamp}\nStatus: {status}\n"
         mqtt_client_instance.publish(f"{MQTT_TOPIC}/{key}", payload)
 
 
