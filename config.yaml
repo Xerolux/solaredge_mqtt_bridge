@@ -19,9 +19,15 @@ general:
   reconnect_attempts: 5          # Anzahl der Wiederholungsversuche bei Verbindungsproblemen
   reconnect_delay: 10            # Verzögerung in Sekunden zwischen Wiederholungsversuchen
 
-# Ring buffer settings
-buffer:
-  size: 5                        # Anzahl der letzten bekannten Werte, die im Puffer gespeichert werden sollen
+# Database settings
+database:
+  path: "sensor_data.db"         # Pfad zur SQLite-Datenbank
+  buffer_size: 1000              # Maximale Anzahl der Einträge im Ringpuffer
+
+# Prediction settings
+prediction:
+  enabled: true                  # Aktiviert die Vorhersage
+  forecast_interval: 60          # Vorhersageintervall in Sekunden (Abstand zwischen Vorhersageberechnungen)
 
 # Optional API settings
 api:
