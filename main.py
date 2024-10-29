@@ -1,4 +1,6 @@
-"""SolarEdge MQTT Bridge - Reads data from SolarEdge energy meter via Modbus and publishes to MQTT broker."""
+"""SolarEdge MQTT Bridge - Reads data from SolarEdge energy meter via Modbus 
+and publishes to MQTT broker.
+"""
 
 import logging
 import time
