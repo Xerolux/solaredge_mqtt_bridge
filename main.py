@@ -31,6 +31,7 @@ INTERVAL = config['general']['interval']
 RECONNECT_ATTEMPTS = config['general']['reconnect_attempts']
 RECONNECT_DELAY = config['general']['reconnect_delay']
 
+
 def connect_mqtt():
     """Connect to MQTT broker and return client instance."""
     client = mqtt_client.Client()
@@ -47,6 +48,7 @@ def connect_mqtt():
     client.connect(MQTT_BROKER, MQTT_PORT)
     return client
 
+
 def fetch_data(modbus_client):
     """Fetch data from Modbus and return a dictionary of values."""
     data = {}
@@ -60,6 +62,7 @@ def fetch_data(modbus_client):
         logger.error("Error fetching data: %s", e)
     return data
 
+
 def publish_data(mqtt_client_instance, data):
     """Publish fetched data to the MQTT broker."""
     for key, values in data.items():
@@ -67,6 +70,7 @@ def publish_data(mqtt_client_instance, data):
         for i, value in enumerate(values, 1):
             payload += f"{i}. Value: {value}\n"
         mqtt_client_instance.publish(f"{MQTT_TOPIC}/{key}", payload)
+
 
 def main():
     """Main program to fetch and publish data periodically."""
@@ -95,6 +99,7 @@ def main():
     finally:
         mqtt_client_instance.loop_stop()
         modbus_client.close()
+
 
 if __name__ == "__main__":
     main()
