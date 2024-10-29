@@ -1,0 +1,16 @@
+modbus:
+  host: "192.168.x.x"         # IP-Adresse des SolarEdge Energiezählers
+  port: 502                    # Modbus-Port (Standard: 502)
+  unit_id: 1                   # Modbus-Einheit (Standard: 1)
+
+mqtt:
+  broker: "mqtt_broker_ip"     # IP-Adresse des MQTT-Brokers
+  port: 1883                   # MQTT-Port (Standard: 1883)
+  topic: "WPZaehler"           # Haupttopic für die Daten
+  username: "mqtt_user"        # Benutzername für MQTT (optional)
+  password: "mqtt_password"    # Passwort für MQTT (optional)
+
+general:
+  interval: 10                 # Intervall in Sekunden für den Datenabruf
+  reconnect_attempts: 3        # Anzahl der erneuten Verbindungsversuche
+  reconnect_delay: 5           # Verzögerung in Sekunden zwischen den Versuchen
