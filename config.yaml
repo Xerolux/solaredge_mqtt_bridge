@@ -38,3 +38,51 @@ general:
   interval: 10                 # Main loop interval in seconds
   reconnect_attempts: 3        # Number of reconnection attempts
   reconnect_delay: 5           # Delay in seconds between retries
+
+logging:
+  level: "INFO"                # Log level (DEBUG, INFO, WARNING, ERROR)
+  file: "/mnt/data/logs/solaredge_mqtt_bridge.log"  # Log file path
+  max_size: 5MB                # Maximum log file size before rotating
+  backup_count: 3              # Number of backup logs to retain
+  reload_on_change: true       # Reload config dynamically for non-critical settings
+
+diagnostics_mode:
+  enabled: false               # Enable diagnostics mode for detailed logging and tracking
+
+health_check:
+  interval: 60                 # Health check interval in seconds
+  alert_on_failure: true       # Send alert if any service fails health check
+  thresholds:
+    cpu_temp: 75               # CPU temperature threshold for alerts
+    mqtt_downtime: 120         # MQTT downtime threshold (in seconds) before alerting
+
+self_healing:
+  enabled: true                # Enable automatic reconnection and reset for services
+
+data_aggregation:
+  rate_limit: 30               # Rate limit for data sampling in seconds (e.g., once every 30 seconds)
+
+backup:
+  enabled: true                # Enable data backup and archiving
+  interval: 86400              # Backup interval in seconds (daily = 86400)
+  backup_path: "/mnt/data/backups/"
+
+alerting:
+  enabled: true                # Enable alert notifications for critical events
+  alert_email: "admin@example.com"  # Email address for alerts
+
+weather:
+  interval: 600                # Weather retrieval interval in seconds
+  caching: true                # Enable caching of weather data to reduce API calls
+  cache_duration: 600          # Duration in seconds to keep cached weather data
+
+predictive_model:
+  seasonal_adjustments: true   # Enable seasonal adjustments for predictions
+  model_selection: true        # Enable automatic model selection
+  tuning_enabled: true         # Enable hyperparameter tuning
+  error_threshold: 0.05        # Error threshold for adaptive model tuning
+
+encryption:
+  modbus: true                 # Enable encryption for Modbus communication
+  mqtt: true                   # Enable encryption for MQTT communication
+  influxdb: true               # Enable encryption for InfluxDB storage
