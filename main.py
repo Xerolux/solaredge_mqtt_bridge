@@ -1,202 +1,198 @@
 import logging
 import time
 import yaml
-import numpy as np
-import pickle
-from datetime import datetime
-from pymodbus.client import ModbusTcpClient
-from paho.mqtt import client as mqtt_client
-from influxdb_client import InfluxDBClient, Point, WritePrecision
-from sklearn.linear_model import SGDRegressor  # Inkremetelles Modell
 import requests
+import joblib
+import pandas as pd
+import asyncio
 import json
-from flask import Flask, render_template
-import matplotlib.pyplot as plt
-import io
-import base64
-import os
+from datetime import datetime, timedelta
+from pymodbus.client import AsyncModbusTcpClient
+from paho.mqtt import client as mqtt_client
+from influxdb import InfluxDBClient
+from sklearn.linear_model import SGDRegressor
+from sklearn.metrics import mean_squared_error
+from pathlib import Path
 
-# Logging Konfiguration
-logging.basicConfig(level=logging.INFO)
+# Configure logging to file
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler("solaredge_reader.log"),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger("SolarEdgeReader")
 
-# Konfiguration laden
+# Load configuration file
 with open("config.yaml", "r", encoding="utf-8") as file:
     config = yaml.safe_load(file)
 
-# InfluxDB-Einstellungen
-INFLUXDB_CLIENT = InfluxDBClient(
-    url=config['influxdb']['url'], 
-    token=config['influxdb']['token'], 
-    org=config['influxdb']['org']
-)
-INFLUXDB_BUCKET = config['influxdb']['bucket']
-VISUALIZATION_QUERY_RANGE = config['influxdb'].get('visualization_query_range', "7d")
-TRAINING_QUERY_RANGE = config['influxdb'].get('training_query_range', "all")
+# Configurations
+MODBUS_HOST = config['modbus']['host']
+MODBUS_PORT = config['modbus']['port']
+MODBUS_UNIT_ID = config['modbus'].get('unit_id', 1)  # Default unit ID
+MQTT_BROKER = config['mqtt']['broker']
+MQTT_PORT = config['mqtt']['port']
+MQTT_TOPIC = config['mqtt']['topic']
+MQTT_USE_SSL = config['mqtt'].get('use_ssl', False)
+MQTT_CA_CERT = config['mqtt'].get('ca_cert')
+INFLUXDB_HOST = config['influxdb']['host']
+INFLUXDB_DATABASE = config['influxdb']['database']
+WEATHER_ENABLED = config['weather'].get('enabled', False)
+WEATHER_API_KEY = config['weather'].get('api_key')
+WEATHER_LOCATION = "Zorneding,DE"
+WEATHER_CACHE_PATH = "weather_cache.json"
 
-# Wetter-API-Einstellungen
-WEATHER_ENABLED = config['prediction'].get('include_weather', False)
-WEATHER_API_KEY = config['prediction']['weather'].get('api_key')
-WEATHER_LOCATION = config['prediction']['weather'].get('location')
-WEATHER_UPDATE_INTERVAL = config['prediction']['weather'].get('update_interval', 3600)
-ERROR_HANDLING_ENABLED = config['prediction']['weather'].get('error_handling', True)
-MAX_WEATHER_RETRY = 3
-last_weather_update = 0
-current_weather = {}
+# General settings
+DATA_INTERVAL = config['general'].get('interval', 10)
+RECONNECT_ATTEMPTS = config['general'].get('reconnect_attempts', 3)
+RECONNECT_DELAY = config['general'].get('reconnect_delay', 5)
 
-# Modell-Speicherpfad und letzte Trainingszeit
-MODEL_PATH = "trained_model.pkl"
-LAST_TRAINED_TIMESTAMP_PATH = "last_trained_timestamp.txt"
+# Training settings
+TRAINING_ENABLED = config['training'].get('enabled', False)
+TRAINING_INTERVAL = config['training'].get('interval', 86400)  # Default: 1 day
+LEARNING_RATE = config['training'].get('learning_rate', 0.01)  # Default learning rate
+MODEL_PATH = config['training'].get('model_path', 'energy_model.pkl')
+DRIFT_THRESHOLD = config['training'].get('drift_threshold', 100)  # Error threshold for retraining
 
-# Initialisiere das inkrementelle Vorhersagemodell und Flask
-forecast_model = SGDRegressor()
-app = Flask(__name__) if config['api'].get('enabled', False) else None
+# Initialize model with SGDRegressor for adaptive learning
+try:
+    model = joblib.load(MODEL_PATH)
+    logger.info("Loaded existing prediction model.")
+except FileNotFoundError:
+    model = SGDRegressor(learning_rate='constant', eta0=LEARNING_RATE)
+    logger.info("No model found. Initialized a new model with learning rate %s", LEARNING_RATE)
 
-# Laden des letzten Trainingszeitpunkts
-def load_last_trained_timestamp():
-    if os.path.exists(LAST_TRAINED_TIMESTAMP_PATH):
-        with open(LAST_TRAINED_TIMESTAMP_PATH, "r") as f:
-            return datetime.fromisoformat(f.read().strip())
-    return None
+# Async functions
+async def connect_mqtt():
+    """Asynchronously connect to MQTT with optional SSL/TLS."""
+    client = mqtt_client.Client()
+    if MQTT_USE_SSL:
+        client.tls_set(ca_certs=MQTT_CA_CERT)
+    client.connect(MQTT_BROKER, MQTT_PORT)
+    client.loop_start()
+    return client
 
-# Speichern des letzten Trainingszeitpunkts
-def save_last_trained_timestamp(timestamp):
-    with open(LAST_TRAINED_TIMESTAMP_PATH, "w") as f:
-        f.write(timestamp.isoformat())
+async def connect_influxdb():
+    """Asynchronously connect to InfluxDB."""
+    client = InfluxDBClient(host=INFLUXDB_HOST, database=INFLUXDB_DATABASE)
+    logger.info("Connected to InfluxDB")
+    return client
 
-# Wetterdaten abrufen und speichern
-def fetch_weather_data():
-    global current_weather, last_weather_update
-    if not WEATHER_ENABLED:
+async def fetch_weather_data():
+    """Fetch and cache weather data."""
+    if Path(WEATHER_CACHE_PATH).is_file():
+        with open(WEATHER_CACHE_PATH, 'r') as cache_file:
+            cached_data = json.load(cache_file)
+            if datetime.now() < datetime.fromisoformat(cached_data['expiry']):
+                logger.info("Using cached weather data")
+                return cached_data['weather']
+
+    try:
+        response = requests.get(f"http://api.openweathermap.org/data/2.5/weather?q={WEATHER_LOCATION}&appid={WEATHER_API_KEY}&units=metric")
+        response.raise_for_status()
+        weather_data = response.json()
+        cache_data = {
+            "weather": {
+                "temperature": weather_data["main"]["temp"],
+                "humidity": weather_data["main"]["humidity"],
+                "description": weather_data["weather"][0]["description"]
+            },
+            "expiry": (datetime.now() + timedelta(hours=1)).isoformat()  # Cache for 1 hour
+        }
+        with open(WEATHER_CACHE_PATH, 'w') as cache_file:
+            json.dump(cache_data, cache_file)
+        logger.info("Fetched and cached new weather data")
+        return cache_data['weather']
+    except Exception as e:
+        logger.error(f"Failed to fetch weather data: {e}")
         return {}
-    
-    retries = 0
-    while retries < MAX_WEATHER_RETRY:
-        try:
-            url = f"http://api.openweathermap.org/data/2.5/weather?q={WEATHER_LOCATION}&appid={WEATHER_API_KEY}&units=metric"
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
-            current_weather = {
-                "temperature": data["main"]["temp"],
-                "cloudiness": data["clouds"]["all"]
-            }
-            last_weather_update = time.time()
-            logger.info("Weather data updated.")
-            save_weather_data_to_influxdb(current_weather["temperature"], current_weather["cloudiness"])
-            return current_weather
-        except requests.exceptions.RequestException as e:
-            retries += 1
-            if ERROR_HANDLING_ENABLED:
-                logger.error(f"Weather data fetch failed (attempt {retries}): {e}")
-            time.sleep(5)
-            
-    if retries == MAX_WEATHER_RETRY:
-        logger.warning("Using last cached weather data after 3 failed attempts.")
-        return current_weather
 
-def save_weather_data_to_influxdb(temperature, cloudiness):
-    """Speichert Wetterdaten in InfluxDB."""
-    point = Point("weather_data") \
-        .tag("source", "openweather") \
-        .field("temperature", temperature) \
-        .field("cloudiness", cloudiness) \
-        .time(datetime.utcnow(), WritePrecision.S)
-    INFLUXDB_CLIENT.write_api(write_options=SYNCHRONOUS).write(
-        bucket=INFLUXDB_BUCKET, org=config['influxdb']['org'], record=point
-    )
-    logger.info(f"Weather data written to InfluxDB: temperature={temperature}, cloudiness={cloudiness}")
+async def fetch_data(modbus_client):
+    """Fetch data asynchronously from Modbus."""
+    data = {}
+    try:
+        await modbus_client.connect()
+        result = await modbus_client.read_input_registers(100, 2, unit=MODBUS_UNIT_ID)  # Energy
+        data["energy"] = result.registers
+        result = await modbus_client.read_input_registers(200, 2, unit=MODBUS_UNIT_ID)  # Power
+        data["power"] = result.registers
+        await modbus_client.close()
+        logger.info("Fetched Modbus data")
+    except Exception as e:
+        logger.error(f"Modbus data fetch failed: {e}")
+    return data
 
-def save_model():
-    """Speichert das trainierte Modell als Datei."""
-    with open(MODEL_PATH, "wb") as f:
-        pickle.dump(forecast_model, f)
-    logger.info("Model saved successfully.")
+async def publish_data(mqtt_client_instance, data, weather_data):
+    """Publish data and weather to MQTT."""
+    timestamp = datetime.now().isoformat()
+    for key, values in data.items():
+        payload = f"{key}: " + ", ".join(map(str, values)) + f" at {timestamp}"
+        mqtt_client_instance.publish(f"{MQTT_TOPIC}/{key}", payload)
+    if WEATHER_ENABLED and weather_data:
+        mqtt_client_instance.publish(f"{MQTT_TOPIC}/weather", json.dumps(weather_data))
+    logger.info("Published data to MQTT")
 
-def load_model():
-    """Lädt das trainierte Modell aus einer Datei, falls vorhanden."""
-    global forecast_model
-    if os.path.exists(MODEL_PATH):
-        with open(MODEL_PATH, "rb") as f:
-            forecast_model = pickle.load(f)
-        logger.info("Model loaded successfully.")
-    else:
-        logger.info("No saved model found; training a new model.")
-
-def prepare_training_data(training_data, weather_data):
-    """Bereitet Trainingsdaten vor, einschließlich abgeleiteter Zeitmerkmale und historischer Werte."""
-    X, y = [], []
-    for i in range(1, len(training_data)):
-        timestamp, energy, power = training_data[i]
-        prev_energy = training_data[i-1][1]
-        
-        date_time = datetime.fromisoformat(timestamp)
-        month = date_time.month
-        day_of_week = date_time.weekday()
-        hour = date_time.hour
-
-        temperature = weather_data.get("temperature", None)
-        cloudiness = weather_data.get("cloudiness", None)
-
-        features = [energy, power, prev_energy, month, day_of_week, hour, temperature, cloudiness]
-        X.append(features)
-        y.append(energy)
-    
-    return np.array(X), np.array(y)
-
-def train_forecast_model():
-    last_trained_timestamp = load_last_trained_timestamp()
-    query_range = f"-{TRAINING_QUERY_RANGE}" if last_trained_timestamp is None else f"{last_trained_timestamp.isoformat()}"
-
-    training_data = fetch_data_for_influxdb(query_range)
-    if len(training_data) < 10:
+async def train_model(recent_data, current_error):
+    """Train model with recent data if drift detected."""
+    if recent_data.empty:
+        logger.warning("No recent data for training.")
         return
+    recent_data['timestamp'] = pd.to_datetime(recent_data['time']).map(datetime.timestamp)
+    X = recent_data[['timestamp']]
+    y = recent_data['value']
 
-    weather_data = fetch_weather_data()
-    X, y = prepare_training_data(training_data, weather_data)
-    forecast_model.partial_fit(X, y)  # Inkrementelles Training
+    model.partial_fit(X, y)
 
-    save_model()
-    save_last_trained_timestamp(datetime.now())
+    # Save model if drift threshold exceeded
+    if current_error > DRIFT_THRESHOLD:
+        joblib.dump(model, MODEL_PATH)
+        logger.info("Model drift detected. Model retrained and saved.")
 
-def predict_future_values():
-    historical_data = fetch_data_for_influxdb(f"-{VISUALIZATION_QUERY_RANGE}")
-    if len(historical_data) < 1:
-        return None
-    weather_data = fetch_weather_data()
-    last_record = np.array([historical_data[-1][1:]] + [weather_data["temperature"], weather_data["cloudiness"]]).reshape(1, -1)
-    prediction = forecast_model.predict(last_record)
-    return prediction[0] if prediction else None
+async def detect_drift(recent_data):
+    """Calculate prediction error and detect data drift."""
+    if recent_data.empty:
+        return 0
+    recent_data['timestamp'] = pd.to_datetime(recent_data['time']).map(datetime.timestamp)
+    X = recent_data[['timestamp']]
+    y_true = recent_data['value']
+    y_pred = model.predict(X)
+    error = mean_squared_error(y_true, y_pred)
+    return error
 
-@app.route('/')
-def dashboard():
-    latest_data = fetch_data_for_influxdb(f"-{VISUALIZATION_QUERY_RANGE}")[-1]
-    forecast = predict_future_values()
-    historical_data = fetch_data_for_influxdb(f"-{VISUALIZATION_QUERY_RANGE}")
-    timestamps, energies, powers = zip(*[(d[0], d[1], d[2]) for d in historical_data])
-    fig, ax = plt.subplots()
-    ax.plot(timestamps, energies, label='Energy')
-    ax.plot(timestamps, powers, label='Power')
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Value')
-    ax.legend()
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    img = io.BytesIO()
-    plt.savefig(img, format='png')
-    img.seek(0)
-    chart_data = base64.b64encode(img.getvalue()).decode()
-    plt.close()
+async def main():
+    """Main function to orchestrate data fetching, publishing, and adaptive training."""
+    mqtt_client_instance = await connect_mqtt()
+    influx_client = await connect_influxdb()
+    modbus_client = AsyncModbusTcpClient(MODBUS_HOST, port=MODBUS_PORT)
+    last_training = datetime.min
 
-    return render_template('dashboard.html', 
-                           current_data=latest_data, 
-                           forecast=forecast, 
-                           chart_data=chart_data)
+    while True:
+        tasks = [
+            fetch_data(modbus_client),
+            fetch_weather_data() if WEATHER_ENABLED else None
+        ]
+        results = await asyncio.gather(*filter(None, tasks))
+        data, weather_data = results[0], results[1] if WEATHER_ENABLED else {}
+
+        # Store in InfluxDB
+        timestamp = datetime.utcnow().isoformat()
+        influx_payload = [{"measurement": "data", "time": timestamp, "fields": data}]
+        influx_client.write_points(influx_payload)
+        
+        # Publish to MQTT
+        await publish_data(mqtt_client_instance, data, weather_data)
+
+        # Adaptive model training with drift detection
+        if TRAINING_ENABLED and (datetime.now() - last_training).total_seconds() >= TRAINING_INTERVAL:
+            recent_data = pd.DataFrame(list(influx_client.query("SELECT * FROM data WHERE time > now() - 30d").get_points()))
+            error = await detect_drift(recent_data)
+            await train_model(recent_data, error)
+            last_training = datetime.now()
+
+        await asyncio.sleep(DATA_INTERVAL)  # Adjustable interval for data retrieval
 
 if __name__ == "__main__":
-    load_model()  # Lade das Modell, falls vorhanden
-    if config['api'].get('enabled', False):
-        from threading import Thread
-        api_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=config['api']['port']))
-        api_thread.start()
-    train_forecast_model()  # Trainiere nur mit neuen Daten
+    asyncio.run(main())
