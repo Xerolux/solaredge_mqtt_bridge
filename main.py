@@ -1,25 +1,55 @@
-
 import asyncio
 import logging
+import yaml
+from datetime import datetime
 from weather_service import WeatherService
 from forecast_service import ForecastService
 from mail_service import MailService
 from influx_service import InfluxService
 from mqtt_service import MQTTService
 from modbus_service import ModbusService
-from datetime import datetime
+import pandas as pd
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+# Load configuration
+with open("config.yaml", "r", encoding="utf-8") as file:
+    config = yaml.safe_load(file)
+
 async def main():
-    # Configuration values (in a real application, load these from config.yaml or environment)
-    weather_service = WeatherService(api_key="your_api_key", location="Zorneding,DE")
-    forecast_service = ForecastService()
-    mail_service = MailService(smtp_server="smtp.example.com", sender_email="sender@example.com", recipient_email="recipient@example.com", password="password")
-    influx_service = InfluxService(host="localhost", database="energy_data")
-    mqtt_service = MQTTService(broker="mqtt.example.com", port=1883)
-    modbus_service = ModbusService(host="192.168.1.100", port=502, unit_id=1)
+    # Initialize services with values from config.yaml
+    weather_service = WeatherService(
+        api_key=config['weather']['api_key'], 
+        location=config['weather']['location'], 
+        cache_path=config['weather']['cache_path']
+    )
+    forecast_service = ForecastService(
+        model_path=config['training']['model_path'],
+        learning_rate=config['training']['learning_rate'],
+        drift_threshold=config['training']['drift_threshold']
+    )
+    mail_service = MailService(
+        smtp_server=config['notifications']['smtp_server'],
+        sender_email=config['notifications']['email_sender'],
+        recipient_email=config['notifications']['email_recipient'],
+        password=config['notifications']['email_password']
+    )
+    influx_service = InfluxService(
+        host=config['influxdb']['host'],
+        database=config['influxdb']['database']
+    )
+    mqtt_service = MQTTService(
+        broker=config['mqtt']['broker'],
+        port=config['mqtt']['port'],
+        use_ssl=config['mqtt'].get('use_ssl', False),
+        ca_cert=config['mqtt'].get('ca_cert')
+    )
+    modbus_service = ModbusService(
+        host=config['modbus']['host'],
+        port=config['modbus']['port'],
+        unit_id=config['modbus'].get('unit_id', 1)
+    )
 
     # Fetch and process data
     weather_data = weather_service.fetch_weather_data()
