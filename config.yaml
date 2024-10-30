@@ -1,35 +1,29 @@
-# InfluxDB Einstellungen
-influxdb:
-  url: "http://localhost:8086"
-  token: "your_influxdb_token"
-  org: "your_organization"
-  bucket: "your_bucket"
-  visualization_query_range: "7d"  # Zeitraum für Visualisierungen
-  training_query_range: "all"      # Zeitraum für Trainingsdaten
+modbus:
+  host: "192.168.1.100"
+  port: 502
+  unit_id: 1  # Configurable unit ID for Modbus
 
-# MQTT Einstellungen
 mqtt:
   broker: "mqtt.example.com"
-  port: 8883                    # Standardport für MQTT über SSL, 1883 für unverschlüsselt
-  username: "mqtt_user"
-  password: "mqtt_password"
-  use_ssl: true                  # Aktiviert SSL/TLS, falls auf true gesetzt
-  ca_cert: "/path/to/ca.crt"     # Pfad zur CA-Zertifikatsdatei (nur erforderlich, wenn use_ssl: true)
+  port: 1883
+  topic: "solaredge"
+  use_ssl: true
+  ca_cert: "/path/to/ca_cert.pem"
 
-# Allgemeine Einstellungen
+influxdb:
+  host: "localhost"
+  database: "energy_data"
+
+weather:
+  enabled: true
+  api_key: "your_openweathermap_api_key"
+
 general:
-  interval: 60                   # Intervall (in Sekunden) für das Abrufen und Senden von Daten
+  interval: 10                 # Interval in seconds for data retrieval
+  reconnect_attempts: 3        # Number of reconnection attempts
+  reconnect_delay: 5           # Delay in seconds between retries
 
-# Vorhersage und Wetterdaten Einstellungen
-prediction:
-  include_weather: true           # Aktiviert die Einbindung von Wetterdaten
-  weather:
-    api_key: "your_openweather_api_key"
-    location: "Zorneding,DE"      # Standort für die Wettervorhersage
-    update_interval: 3600         # Intervall (in Sekunden) für das Abrufen der Wetterdaten
-    error_handling: true          # Aktiviert erweitertes Fehlerhandling bei der Wetterdatenabfrage
-
-# API Einstellungen für das Web-Dashboard
-api:
-  enabled: true                   # Aktiviert das Web-Dashboard (Flask-App)
-  port: 5000                      # Port, auf dem das Web-Dashboard läuft
+training:
+  enabled: true
+  interval: 86400              # Training every day
+  learning_rate: 0.
