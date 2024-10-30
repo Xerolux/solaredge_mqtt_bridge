@@ -1,148 +1,40 @@
-"""SolarEdge MQTT Bridge - Reads data from SolarEdge energy meter via Modbus 
-and publishes to MQTT broker, storing last known values if data retrieval fails.
-"""
 
+import asyncio
 import logging
-import time
+from weather_service import WeatherService
+from forecast_service import ForecastService
+from mail_service import MailService
+from influx_service import InfluxService
+from mqtt_service import MQTTService
+from modbus_service import ModbusService
 from datetime import datetime
-import yaml
-from pymodbus.client import ModbusTcpClient  # Direct import to avoid pylint error
-from paho.mqtt import client as mqtt_client
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("SolarEdgeReader")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# Load configuration file
-with open("config.yaml", "r", encoding="utf-8") as file:
-    config = yaml.safe_load(file)
+async def main():
+    # Configuration values (in a real application, load these from config.yaml or environment)
+    weather_service = WeatherService(api_key="your_api_key", location="Zorneding,DE")
+    forecast_service = ForecastService()
+    mail_service = MailService(smtp_server="smtp.example.com", sender_email="sender@example.com", recipient_email="recipient@example.com", password="password")
+    influx_service = InfluxService(host="localhost", database="energy_data")
+    mqtt_service = MQTTService(broker="mqtt.example.com", port=1883)
+    modbus_service = ModbusService(host="192.168.1.100", port=502, unit_id=1)
 
-# Modbus settings
-MODBUS_HOST = config['modbus']['host']
-MODBUS_PORT = config['modbus']['port']
-MODBUS_UNIT_ID = config['modbus']['unit_id']
+    # Fetch and process data
+    weather_data = weather_service.fetch_weather_data()
+    modbus_data = await modbus_service.fetch_data(100, 2)
 
-# MQTT settings
-MQTT_BROKER = config['mqtt']['broker']
-MQTT_PORT = config['mqtt']['port']
-MQTT_TOPIC = config['mqtt']['topic']
-MQTT_USERNAME = config['mqtt'].get('username')
-MQTT_PASSWORD = config['mqtt'].get('password')
+    # Publish to MQTT and write to InfluxDB
+    mqtt_service.publish("weather", str(weather_data))
+    influx_service.write_data("modbus_data", datetime.utcnow().isoformat(), {"value": modbus_data})
 
-# General settings
-INTERVAL = config['general']['interval']
-RECONNECT_ATTEMPTS = config['general']['reconnect_attempts']
-RECONNECT_DELAY = config['general']['reconnect_delay']
+    # Train forecast model
+    error = forecast_service.detect_drift(pd.DataFrame(modbus_data, columns=["value"]))
+    forecast_service.train_model(pd.DataFrame(modbus_data, columns=["value"]), error)
 
-# Cache for last known values and status
-last_known_values = {}
-last_known_timestamp = None
-status = "OK"
-
-
-def connect_mqtt():
-    """Connect to MQTT broker and return client instance."""
-    client = mqtt_client.Client()
-    if MQTT_USERNAME and MQTT_PASSWORD:
-        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-
-    def on_connect(_client, _userdata, _flags, rc):
-        if rc == 0:
-            logger.info("Connected to MQTT Broker")
-        else:
-            logger.error("Failed to connect to MQTT Broker. Code: %d", rc)
-
-    client.on_connect = on_connect
-    client.connect(MQTT_BROKER, MQTT_PORT)
-    return client
-
-
-def fetch_device_info(modbus_client):
-    """Fetch device information such as serial number, manufacturer, and model."""
-    info = {}
-    try:
-        # Example register addresses; replace these with actual addresses from SolarEdge documentation
-        info['serial_number'] = modbus_client.read_input_registers(40000, 2, unit=MODBUS_UNIT_ID).registers
-        info['model'] = modbus_client.read_input_registers(40010, 2, unit=MODBUS_UNIT_ID).registers
-        info['manufacturer'] = modbus_client.read_input_registers(40020, 2, unit=MODBUS_UNIT_ID).registers
-    except Exception as e:
-        logger.error("Error fetching device information: %s", e)
-    return info
-
-
-def fetch_data(modbus_client):
-    """Fetch data from Modbus and return a dictionary of values, or last known values if fetch fails."""
-    global last_known_values, last_known_timestamp, status
-    data = {}
-    try:
-        # Fetch data from Modbus registers
-        data[1] = modbus_client.read_input_registers(
-            100, 2, unit=MODBUS_UNIT_ID).registers  # Example for energy consumption
-        data[2] = modbus_client.read_input_registers(
-            200, 2, unit=MODBUS_UNIT_ID).registers  # Example for current power
-
-        # Update last known values and timestamp
-        last_known_values = data
-        last_known_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        status = "OK"
-    except (ConnectionError, ValueError) as e:
-        logger.error("Error fetching data: %s", e)
-        # Use last known values if fetch fails
-        data = last_known_values if last_known_values else {}
-        if data:
-            status = "Last value"
-        else:
-            status = "Error"
-            last_known_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return data
-
-
-def publish_data(mqtt_client_instance, data):
-    """Publish fetched data along with timestamp and status to the MQTT broker."""
-    global last_known_timestamp, status
-
-    # Publish data with timestamp and status
-    for key, values in data.items():
-        payload = f"{key}\n"
-        for i, value in enumerate(values, 1):
-            payload += f"{i}. Value: {value}\n"
-        payload += f"Timestamp: {last_known_timestamp}\nStatus: {status}\n"
-        mqtt_client_instance.publish(f"{MQTT_TOPIC}/{key}", payload)
-
-
-def main():
-    """Main program to fetch and publish data periodically."""
-    mqtt_client_instance = connect_mqtt()
-    mqtt_client_instance.loop_start()
-    modbus_client = ModbusTcpClient(MODBUS_HOST, port=MODBUS_PORT)
-
-    # Fetch device information once at startup
-    device_info = fetch_device_info(modbus_client)
-    logger.info("Device Info: %s", device_info)
-    mqtt_client_instance.publish(f"{MQTT_TOPIC}/device_info", str(device_info))
-
-    try:
-        while True:
-            if not modbus_client.connect():
-                logger.warning("Modbus connection failed, retrying...")
-                for _ in range(RECONNECT_ATTEMPTS):
-                    if modbus_client.connect():
-                        break
-                    time.sleep(RECONNECT_DELAY)
-                else:
-                    logger.error("Failed to reconnect, exiting.")
-                    break
-            
-            # Fetch data and publish via MQTT
-            data = fetch_data(modbus_client)
-            publish_data(mqtt_client_instance, data)
-            time.sleep(INTERVAL)
-    except KeyboardInterrupt:
-        logger.info("Stopped by user")
-    finally:
-        mqtt_client_instance.loop_stop()
-        modbus_client.close()
-
+    # Send report
+    mail_service.send_report("Daily report content")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
