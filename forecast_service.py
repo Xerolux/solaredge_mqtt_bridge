@@ -1,17 +1,18 @@
-
 import joblib
 import pandas as pd
 from sklearn.linear_model import SGDRegressor
 from sklearn.metrics import mean_squared_error
 import logging
+from datetime import datetime
 
 logger = logging.getLogger("ForecastService")
 
 class ForecastService:
-    def __init__(self, model_path="energy_model.pkl", learning_rate=0.01, drift_threshold=100):
-        self.model_path = model_path
-        self.learning_rate = learning_rate
-        self.drift_threshold = drift_threshold
+    def __init__(self, config):
+        # Retrieve configuration values
+        self.model_path = config['training']['model_path']
+        self.learning_rate = config['training']['learning_rate']
+        self.drift_threshold = config['training']['drift_threshold']
         self.model = self._load_or_initialize_model()
 
     def _load_or_initialize_model(self):
