@@ -11,9 +11,15 @@ setup(
     url="https://github.com/xerolux/solaredge_mqtt_bridge",
     packages=find_packages(),
     install_requires=[
-        "pymodbus>=2.5.3",
-        "paho-mqtt>=1.6.1",
-        "pyyaml>=6.0"
+        "pymodbus>=2.5.3",            # For Modbus communication
+        "paho-mqtt>=1.6.1",           # For MQTT communication
+        "pyyaml>=6.0",                # For YAML config handling
+        "requests>=2.25.1",           # For API requests (e.g., weather data)
+        "influxdb>=5.3.1",            # For InfluxDB communication
+        "scikit-learn>=1.0.2",        # For ML models
+        "joblib>=1.1.0",              # For saving/loading models
+        "pandas>=1.3.3",              # For data manipulation
+        "email-validator>=1.1.3",     # For validating email addresses
     ],
     entry_points={
         "console_scripts": [
