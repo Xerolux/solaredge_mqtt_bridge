@@ -1,16 +1,40 @@
 modbus:
-  host: "192.168.x.x"         # IP-Adresse des SolarEdge Energiezählers
-  port: 502                    # Modbus-Port (Standard: 502)
-  unit_id: 1                   # Modbus-Einheit (Standard: 1)
+  host: "192.168.1.100"
+  port: 502
+  unit_id: 1                  # Configurable unit ID for Modbus
 
 mqtt:
-  broker: "mqtt_broker_ip"     # IP-Adresse des MQTT-Brokers
-  port: 1883                   # MQTT-Port (Standard: 1883)
-  topic: "WPZaehler"           # Haupttopic für die Daten
-  username: "mqtt_user"        # Benutzername für MQTT (optional)
-  password: "mqtt_password"    # Passwort für MQTT (optional)
+  broker: "mqtt.example.com"
+  port: 1883
+  use_ssl: true
+  ca_cert: "/path/to/ca_cert.pem"
+  topic: "solaredge"           # Base topic for MQTT publishing
+
+influxdb:
+  host: "localhost"
+  database: "energy_data"
+
+weather:
+  enabled: true                # Enable/disable weather retrieval
+  api_key: "your_openweathermap_api_key"
+  location: "Zorneding,DE"
+  cache_path: "weather_cache.json"
+
+training:
+  enabled: true
+  interval: 86400              # Training interval in seconds (default: daily)
+  learning_rate: 0.01          # Model learning rate
+  model_path: "energy_model.pkl"
+  drift_threshold: 100         # Threshold for retraining due to drift
+
+notifications:
+  enabled: true
+  email_sender: "your_email@example.com"
+  email_recipient: "recipient_email@example.com"
+  smtp_server: "smtp.example.com"
+  email_password: "your_email_password"
 
 general:
-  interval: 10                 # Intervall in Sekunden für den Datenabruf
-  reconnect_attempts: 3        # Anzahl der erneuten Verbindungsversuche
-  reconnect_delay: 5           # Verzögerung in Sekunden zwischen den Versuchen
+  interval: 10                 # Main loop interval in seconds
+  reconnect_attempts: 3        # Number of reconnection attempts
+  reconnect_delay: 5           # Delay in seconds between retries
